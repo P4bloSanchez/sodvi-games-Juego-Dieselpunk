@@ -132,6 +132,9 @@ está basado el juego.Los temas hasta el momento son:
 ● All Skies 
 ● Coming Battle 
 
+## Trello
+https://trello.com/invite/b/Y2gN99SB/ATTI278943801fb6dfdf1ba7b65cab747c2eC5136E86/sodvi-videojuego-dieselpunk
+
 ## Recursos Música 
 
 - Modos musicales: https://www.youtube.com/playlist?list=PL-ZQIvQFPv4LYaNhtbleNaepGSGsuzQyp 
