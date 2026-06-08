@@ -1,134 +1,84 @@
 extends CharacterBody2D
 
-@export var max_hp : float = 200
-var current_hp : float
-@export var speed : float = 150
-@export var collision_damage = 10
+signal boss_derrotado
 
-@onready var weapons = [
-	$Weapon1/Weapon, $Weapon2/Weapon, $Weapon3/Weapon, $Weapon4/Weapon,
-	$Weapon5/Weapon, $Weapon6/Weapon, $Weapon7/Weapon, $Weapon8/Weapon
-]
+var MisilBoss = preload("res://scenes/misil_boss.tscn")
 
-# Control de movimiento
-enum MovePattern {HORIZONTAL, VERTICAL, CIRCLE}
-var current_pattern = MovePattern.HORIZONTAL
-var pattern_timer = 0.0
-var pattern_duration = 5.0  # Cambiar patrón cada 5 segundos
+@onready var timer_disparo = $TimerDisparo
+@onready var sprite_explosion = $SpriteEXPLOSION
+@onready var patas = [$Pata1, $Pata2, $Pata3, $Pata4, $Pata5, $Pata6]
 
-# Límites de movimiento
-var screen_width
-var screen_height
-var min_y = 50
-var max_y = 300  # No baja tanto
+var vida = 50
+var tiempo_fase = 0.0
+var patron_actual = 0
+var duracion_patron = 5.0
 
-# Variables para movimiento circular
-var circle_center = Vector2.ZERO
-var circle_radius = 100
-var circle_angle = 0.0
+var velocidad_zigzag = 80.0
+var direccion_zigzag = 1
 
-var move_direction = 1
-
-signal boss_died
-signal health_changed(current, max)
+var angulo_circular = 0.0
+var radio_circular = 100.0
+var centro_circular = Vector2(270, 80)
+var velocidad_angular = 1.5
 
 func _ready():
-	current_hp = max_hp
-	health_changed.emit(current_hp, max_hp)
-	
-	var viewport = get_viewport_rect().size
-	screen_width = viewport.x
-	screen_height = viewport.y
-	
-	circle_center = Vector2(screen_width / 2, 150)
-	
-	$ShootTimer.start()
+	timer_disparo.wait_time = 1.2
+	timer_disparo.start()
+	centro_circular = Vector2(270, 80)
 
-func _physics_process(delta):
-	pattern_timer += delta
-	
-	# Cambiar patrón cada cierto tiempo
-	if pattern_timer >= pattern_duration:
-		pattern_timer = 0.0
-		change_pattern()
-	
-	# Ejecutar patrón actual
-	match current_pattern:
-		MovePattern.HORIZONTAL:
-			move_horizontal(delta)
-		MovePattern.VERTICAL:
-			move_vertical(delta)
-		MovePattern.CIRCLE:
-			move_circle(delta)
-	
-	move_and_slide()
-	
-	# Colisiones
-	for i in get_slide_collision_count():
-		var collision = get_slide_collision(i)
-		var body = collision.get_collider()
-		if body.has_method("take_damage"):
-			body.take_damage(collision_damage)
+func _process(delta):
+	tiempo_fase += delta
+	if tiempo_fase >= duracion_patron:
+		tiempo_fase = 0.0
+		patron_actual = (patron_actual + 1) % 2
+	match patron_actual:
+		0:
+			_mover_zigzag(delta)
+		1:
+			_mover_circular(delta)
 
-func move_horizontal(delta):
-	velocity.y = 0
-	velocity.x = move_direction * speed
-	
-	if position.x > screen_width - 100:
-		move_direction = -1
-	elif position.x < 100:
-		move_direction = 1
-	
-	# Mantener Y en rango
-	position.y = clamp(position.y, min_y, max_y)
+func _mover_zigzag(delta):
+	position.x += velocidad_zigzag * direccion_zigzag * delta
+	if position.x > 460:
+		direccion_zigzag = -1
+	elif position.x < 80:
+		direccion_zigzag = 1
 
-func move_vertical(delta):
-	velocity.x = 0
-	velocity.y = move_direction * speed * 0.7  # Más lento vertical
-	
-	if position.y > max_y:
-		move_direction = -1
-	elif position.y < min_y:
-		move_direction = 1
+func _mover_circular(delta):
+	angulo_circular += velocidad_angular * delta
+	position.x = centro_circular.x + cos(angulo_circular) * radio_circular
+	position.y = centro_circular.y + sin(angulo_circular) * radio_circular * 0.4
 
-func move_circle(delta):
-	circle_angle += delta * 2  # Velocidad rotación
-	
-	var target_x = circle_center.x + cos(circle_angle) * circle_radius
-	var target_y = circle_center.y + sin(circle_angle) * circle_radius
-	
-	# Mantener en límites
-	target_y = clamp(target_y, min_y, max_y)
-	
-	velocity = (Vector2(target_x, target_y) - position).normalized() * speed
+func explotar():
+	vida -= 1
+	if vida <= 0:
+		_morir()
+	else:
+		modulate = Color(10, 1, 1)
+		await get_tree().create_timer(0.1).timeout
+		modulate = Color(1, 1, 1)
 
-func change_pattern():
-	var patterns = [MovePattern.HORIZONTAL, MovePattern.VERTICAL, MovePattern.CIRCLE]
-	var new_pattern = patterns[randi() % patterns.size()]
-	
-	# Evitar repetir el mismo patrón
-	while new_pattern == current_pattern:
-		new_pattern = patterns[randi() % patterns.size()]
-	
-	current_pattern = new_pattern
-	
-	# Reset para movimiento circular
-	if current_pattern == MovePattern.CIRCLE:
-		circle_center = position
-		circle_angle = 0.0
-
-func take_damage(damage):
-	current_hp -= damage
-	current_hp = clamp(current_hp, 0, max_hp)
-	health_changed.emit(current_hp, max_hp)
-	if current_hp <= 0:
-		die()
-
-func die():
-	boss_died.emit()
+func _morir():
+	timer_disparo.stop()
+	set_process(false)
+	$CollisionShape2D.set_deferred("disabled", true)
+	$Sprite2D.visible = false
+	sprite_explosion.visible = true
+	boss_derrotado.emit()
+	await get_tree().create_timer(1.5).timeout
 	queue_free()
-
-func _on_shoot_timer_timeout():
-	for weapon in weapons:
-		if weapon:
-			weapon.shoot()
+	
+func _on_timer_disparo_timeout() -> void:
+	_disparar_todas_patas()
+	timer_disparo.wait_time = randf_range(0.8, 1.5)
+	timer_disparo.start()
+	
+func _disparar_todas_patas():
+	for pata in patas:
+		if pata == null:
+			continue
+		var misil = MisilBoss.instantiate()
+		misil.global_position = pata.global_position
+		var dir = Vector2(randf_range(-0.3, 0.3), 1).normalized()
+		get_parent().add_child(misil)
+		misil.iniciar(dir)
